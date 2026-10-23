@@ -114,11 +114,11 @@
 
   // MARK: - Focus
 
-  var Z = {TOP: 'top', CARDS: 'cards', SHELF: 'shelf', DRAWER: 'drawer', APPS: 'apps', SETTINGS: 'settings', EDIT: 'edit', YTEDIT: 'ytedit', ASSETEDIT: 'assetedit'};
-  var st = {zone: Z.SHELF, top: 0, tab: 0, card: 0, shelf: 0, drawer: 0, grid: 0, row: 0, edit: 0, ytrow: 0, assetrow: 0};
+  var Z = {TOP: 'top', CARDS: 'cards', SHELF: 'shelf', DRAWER: 'drawer', APPS: 'apps', SETTINGS: 'settings', EDIT: 'edit', YTEDIT: 'ytedit', ASSETEDIT: 'assetedit', TABEDIT: 'tabedit'};
+  var st = {zone: Z.SHELF, top: 0, tab: 0, card: 0, shelf: 0, drawer: 0, grid: 0, row: 0, edit: 0, ytrow: 0, assetrow: 0, tabrow: 0};
   var cards = [], renderedKind = '', editingYt = false;
 
-  function sheetOpen() { return st.zone === Z.APPS || st.zone === Z.SETTINGS || st.zone === Z.EDIT || st.zone === Z.YTEDIT || st.zone === Z.ASSETEDIT; }
+  function sheetOpen() { return st.zone === Z.APPS || st.zone === Z.SETTINGS || st.zone === Z.EDIT || st.zone === Z.YTEDIT || st.zone === Z.ASSETEDIT || st.zone === Z.TABEDIT; }
 
   function updateFocus() {
     var i, list;
@@ -146,6 +146,7 @@
     focusRows($('shelfedit'), st.edit, st.zone === Z.EDIT);
     focusRows($('ytedit'), st.ytrow, st.zone === Z.YTEDIT);
     focusRows($('assetedit'), st.assetrow, st.zone === Z.ASSETEDIT);
+    focusRows($('tabedit'), st.tabrow, st.zone === Z.TABEDIT);
     setClass(body, 'drawer-open', st.zone === Z.DRAWER);
   }
 
@@ -175,8 +176,23 @@
 
   // MARK: - Top: title, tabs, buttons, quotes
 
-  var TAB_KIND = ['youtube', 'tv', 'movie'];   // ordem remontada em renderTop (YouTube, Séries, Filmes)
+  var TAB_KIND = ['youtube', 'tv', 'movie'];   // ordem remontada em renderTop a partir de Prefs.tabs()
   var NTABS = 3;   // número de abas visíveis; atualizado em renderTop (a aba YouTube só entra se configurada)
+
+  // Todas as abas possíveis (Explorar = filmes + séries juntos, kind null nas picks).
+  function allTabs() {
+    return [
+      {kind: 'youtube', name: 'YouTube'},
+      {kind: 'explore', name: tr('Explorar', 'Explore', 'Explorar')},
+      {kind: 'tv', name: tr('Séries', 'Shows', 'Series')},
+      {kind: 'movie', name: tr('Filmes', 'Movies', 'Películas')}
+    ];
+  }
+  function tabsEnabled() {
+    var t = Prefs.tabs();
+    return (t && t.length) ? t : ['youtube', 'tv', 'movie'];   // padrão: YouTube, Séries, Filmes (sem Explorar)
+  }
+  function tabName(kind) { var a = allTabs(); for (var i = 0; i < a.length; i++) if (a[i].kind === kind) return a[i].name; return kind; }
 
   /** Cabeçalho central: linha 1 = temperatura (ícone + graus) + horário; linha 2 = data. */
   function updateTitle() {
@@ -198,12 +214,16 @@
     updateTitle();
     var tabs = $('tabs');
     tabs.innerHTML = '';
-    // Ordem pedida pelo Filemon: YouTube, Séries, Filmes (sem "Explorar").
+    // Abas conforme a ordem/visibilidade dos Ajustes (a aba YouTube só entra se houver chave + canais).
     TAB_KIND = []; var names = [];
-    if (Data.hasYouTube()) { TAB_KIND.push('youtube'); names.push('YouTube'); }
-    TAB_KIND.push('tv'); names.push(tr('Séries', 'Shows', 'Series'));
-    TAB_KIND.push('movie'); names.push(tr('Filmes', 'Movies', 'Películas'));
+    var order = tabsEnabled();
+    for (var oi = 0; oi < order.length; oi++) {
+      if (order[oi] === 'youtube' && !Data.hasYouTube()) continue;
+      TAB_KIND.push(order[oi]); names.push(tabName(order[oi]));
+    }
+    if (!names.length) { TAB_KIND.push('movie'); names.push(tabName('movie')); }   // nunca deixa sem nenhuma
     NTABS = names.length;
+    st.tab = Math.min(st.tab, NTABS - 1);
     for (var i = 0; i < names.length; i++) {
       var t = el('button', 'tab', tabs, names[i]);
       hover(t, Z.TOP, i);
@@ -260,7 +280,7 @@
 
   function renderCards() {
     var kind = TAB_KIND[st.tab], yt = kind === 'youtube';
-    var list = yt ? Data.youtube(20) : Data.picks(kind, 7);
+    var list = yt ? Data.youtube(20) : Data.picks(kind === 'explore' ? null : kind, 7);
     var holder = $('cards');
     setClass(body, 'no-picks', !list.length);
     var same = renderedKind === kind && list.length === cards.length;
@@ -416,7 +436,7 @@
     el('div', 'range', card, I18N.lang === 'ru' ? 'Макс. ' + Data.degrees(w.max) + '   Мин. ' + Data.degrees(w.min) : tr('Máx. ' + Data.degrees(w.max) + '   Mín. ' + Data.degrees(w.min), 'H:' + Data.degrees(w.max) + '   L:' + Data.degrees(w.min),
         'Máx. ' + Data.degrees(w.max) + '   Mín. ' + Data.degrees(w.min)));
     el('div', 'split', card);
-    var days = el('div', 'hours', card), ndays = Math.min(w.days.length, 4), width = parseFloat(card.style.width) - 30 - 422, dw = width / ndays;
+    var days = el('div', 'hours', card), ndays = Math.max(1, Math.min(w.days.length, 7)), width = parseFloat(card.style.width) - 30 - 422, dw = width / ndays;
     for (var i = 0; i < ndays; i++) {
       var h = el('div', 'hour', days), x = w.days[i];
       h.style.left = (dw * i) + 'px';
@@ -492,6 +512,7 @@
     setClass($('shelfedit'), 'open', false);
     setClass($('ytedit'), 'open', false);
     setClass($('assetedit'), 'open', false);
+    setClass($('tabedit'), 'open', false);
     st.zone = Z.SHELF;
     updateFocus();
   }
@@ -500,22 +521,32 @@
 
   function settingRows() {
     var lang = Prefs.language(), unit = Prefs.temperature(), theme = Prefs.theme();
+    var clock = Prefs.clock(), days = Prefs.weatherDays();
     var auto = tr('Automático', 'Automatic', 'Automático'), on = tr('Ligado', 'On', 'Activado'), off = tr('Desligado', 'Off', 'Desactivado');
     var rows = [
       {label: tr('Idioma', 'Language', 'Idioma'), value: lang === 'ru' ? 'Русский' : lang === 'de' ? 'Deutsch' : lang === 'pt' ? 'Português' : lang === 'en' ? 'English' : lang === 'es' ? 'Español' : auto,
         step: function (d) { cycle('language', ['auto', 'de', 'en', 'es', 'pt', 'ru'], lang, d); I18N.set(Prefs.language()); renderAll(); }},
       {label: tr('Temperatura', 'Temperature', 'Temperatura'), value: unit === 'C' ? '°C' : unit === 'F' ? '°F' : auto,
         step: function (d) { cycle('temperature', ['auto', 'C', 'F'], unit, d); renderPanels(); }},
+      {label: tr('Formato de hora', 'Clock format', 'Formato de hora'), value: clock === '24' ? '24h' : clock === '12' ? '12h' : auto,
+        step: function (d) { cycle('clock', ['auto', '24', '12'], clock, d); updateTitle(); renderClock(); renderPanels(); }},
       {label: tr('Tema', 'Theme', 'Tema'), value: theme === 'areia' ? tr('Areia', 'Sand', 'Arena') : theme === 'nevoa' ? tr('Névoa', 'Mist', 'Niebla') : theme === 'salvia' ? tr('Sálvia', 'Sage', 'Salvia') : theme === 'meianoite' ? tr('Meia-noite', 'Midnight', 'Medianoche') : theme === 'oled' ? 'OLED' : theme === 'carvao' ? tr('Carvão', 'Charcoal', 'Carbón') : auto,
         step: function (d) { cycle('theme', ['auto', 'areia', 'nevoa', 'salvia', 'meianoite', 'oled', 'carvao'], theme, d); checkNight(); }},
       {label: tr('Widget do clima', 'Weather widget', 'Widget del clima'), toggle: Prefs.weather(),
         step: function () { Prefs.set('weather', !Prefs.weather()); renderPanels(); }},
+      {label: tr('Dias do clima', 'Weather days', 'Días del clima'), value: String(days),
+        step: function (d) { cycle('weatherDays', [3, 4, 5, 6, 7], days, d); Data.setWeatherDays(Prefs.weatherDays()); renderPanels(); }},
       {label: tr('Widget de cotações', 'Quotes widget', 'Widget de cotizaciones'), toggle: Prefs.quotes(),
         step: function () { Prefs.set('quotes', !Prefs.quotes()); Data.settingsChanged(); }}
     ];
+    rows.push({label: tr('Abas', 'Tabs', 'Pestañas'), value: '›', step: function (d) { if (d >= 0) openTabEdit(); }});
     rows.push({label: tr('Cotações', 'Quotes', 'Cotizaciones'), value: '›', step: function (d) { if (d >= 0) openAssetEdit(); }});
     rows.push({label: tr('Prateleira', 'Shelf', 'Estante'), value: '›', step: function (d) { if (d >= 0) openShelfEdit(); }});
     if (Data.hasYouTube()) rows.push({label: tr('Canais do YouTube', 'YouTube channels', 'Canales de YouTube'), value: '›', step: function (d) { if (d >= 0) openYtEdit(); }});
+    rows.push({label: tr('Chave TMDB (filmes/séries)', 'TMDB key (movies/shows)', 'Clave TMDB'), value: Data.hasKey() ? tr('Definida ›', 'Set ›', 'Definida ›') : '›',
+      step: function (d) { if (d < 0) return; openTextInput(tr('Cole a chave do TMDB', 'Paste the TMDB key', 'Pega la clave TMDB'), function (val) { Data.setTmdbKey(val); toast(tr('Chave TMDB salva', 'TMDB key saved', 'Clave TMDB guardada')); if (st.zone === Z.SETTINGS) renderSettings(); }); }});
+    rows.push({label: tr('Chave do YouTube', 'YouTube key', 'Clave de YouTube'), value: Data.hasYouTube() ? tr('Definida ›', 'Set ›', 'Definida ›') : '›',
+      step: function (d) { if (d < 0) return; openTextInput(tr('Cole a chave da API do YouTube', 'Paste the YouTube API key', 'Pega la clave de la API de YouTube'), function (val) { Data.setYouTubeKey(val); toast(tr('Chave do YouTube salva', 'YouTube key saved', 'Clave de YouTube guardada')); renderTop(); renderCards(); if (st.zone === Z.SETTINGS) renderSettings(); }); }});
     rows.push({label: tr('Ajustes da TV', 'TV Settings', 'Ajustes del TV'), value: '›', step: function (d) { if (d >= 0) tvSettings(); }});
     return rows;
   }
@@ -625,6 +656,56 @@
     renderShelfEdit();
   }
 
+  // --- Editor de abas: ordem e visibilidade (OK liga/desliga, ← → reordenam) ---
+  function renderTabEdit() {
+    var box = $('tabedit').firstChild;
+    box.innerHTML = '';
+    var title = el('div', 'title', box);
+    sym('settings', title);
+    title.appendChild(document.createTextNode(tr('Abas', 'Tabs', 'Pestañas')));
+    var all = allTabs(), order = tabsEnabled();
+    var list = el('div', 'list', box), holder = el('div', 'rows', list);
+    list.style.height = Math.min(all.length, 7) * 78 + 'px';
+    for (var i = 0; i < all.length; i++) {
+      var t = all[i], at = order.indexOf(t.kind), row = el('div', 'row', holder, t.name);
+      var needKey = t.kind === 'youtube' && !Data.hasYouTube();
+      el('span', 'value', row, needKey ? tr('Requer a chave do YouTube', 'Needs YouTube key', 'Requiere la clave de YouTube')
+        : at >= 0 ? tr('Ligada · ', 'On · ', 'Activa · ') + ordinal(at + 1) : tr('Desligada', 'Off', 'Desactivada'));
+      hover(row, Z.TABEDIT, i);
+    }
+    el('div', 'hint', box, tr('OK liga ou desliga · ← → mudam a ordem', 'OK toggles · ← → change the order', 'OK activa o desactiva · ← → cambian el orden'));
+    updateFocus();
+  }
+  function openTabEdit() {
+    setClass($('settings'), 'open', false);
+    st.zone = Z.TABEDIT;
+    st.tabrow = 0;
+    renderTabEdit();
+    setClass($('tabedit'), 'open', true);
+    updateFocus();
+  }
+  function editTabs(dx) {
+    var all = allTabs(), tab = all[st.tabrow];
+    if (!tab) return;
+    var order = tabsEnabled().slice(), at = order.indexOf(tab.kind);
+    if (dx === 0) {
+      if (at >= 0) {
+        if (order.length <= 1) { toast(tr('Deixe ao menos uma aba.', 'Keep at least one tab.', 'Deja al menos una pestaña.')); return; }
+        order.splice(at, 1);
+      } else order.push(tab.kind);
+    } else {
+      if (at < 0) return;
+      var to = Math.max(0, Math.min(order.length - 1, at + dx));
+      order.splice(at, 1);
+      order.splice(to, 0, tab.kind);
+    }
+    Prefs.set('tabs', order);
+    st.tab = 0;
+    renderTop();
+    renderCards();
+    renderTabEdit();
+  }
+
   // MARK: - Editores de lista: canais do YouTube e cotações (adicionar por texto, remover com confirmação)
 
   var pendingRemove = null;   // id do item aguardando o 2º OK para remover (evita apagar sem querer)
@@ -720,7 +801,7 @@
     for (var i = 0; i < list.length; i++) listRow(holder, Z.ASSETEDIT, i, list[i].sym + '/' + list[i].unit, 'as:' + list[i].sym);
     var add = el('div', 'row', holder, tr('＋ Adicionar ativo', '＋ Add asset', '＋ Añadir activo'));
     hover(add, Z.ASSETEDIT, list.length);
-    el('div', 'hint', box, tr('Digite o símbolo (ex.: BTC, ADA, DOGE). 1º OK pede confirmação, 2º OK remove.', 'Type the symbol (e.g. BTC, ADA). First OK asks, second OK removes.', 'Escribe el símbolo. 1º OK pregunta, 2º OK quita.'));
+    el('div', 'hint', box, tr('Cripto (BTC, ADA…) ou moeda (USD, EUR, GBP…). 1º OK pede confirmação, 2º OK remove.', 'Crypto (BTC, ADA…) or currency (USD, EUR…). First OK asks, second OK removes.', 'Cripto (BTC…) o moneda (USD, EUR…). 1º OK pregunta, 2º OK quita.'));
     updateFocus();
   }
   function openAssetEdit() {
@@ -734,7 +815,7 @@
     var list = assetRows();
     if (st.assetrow >= list.length) {
       pendingRemove = null;
-      openTextInput(tr('Símbolo (ex.: BTC, ADA, DOGE)', 'Symbol (e.g. BTC, ADA)', 'Símbolo (ej.: BTC)'), function (v) {
+      openTextInput(tr('Cripto ou moeda (BTC, ADA, USD, EUR…)', 'Crypto or currency (BTC, USD, EUR…)', 'Cripto o moneda (BTC, USD, EUR…)'), function (v) {
         toast(tr('Procurando o ativo…', 'Looking up the asset…', 'Buscando el activo…'));
         Data.addAsset(v, function (ok, msg) { toast((ok ? tr('Adicionado: ', 'Added: ', 'Añadido: ') : tr('Não deu: ', "Didn't work: ", 'No se pudo: ')) + msg); if (st.zone === Z.ASSETEDIT) renderAssetEdit(); });
       });
@@ -809,6 +890,9 @@
       case Z.ASSETEDIT:
         assetAction();
         return;
+      case Z.TABEDIT:
+        editTabs(0);
+        return;
     }
   }
 
@@ -868,6 +952,10 @@
       case Z.ASSETEDIT:
         if (dy) { pendingRemove = null; st.assetrow = Math.max(0, Math.min(assetRowCount() - 1, st.assetrow + dy)); }
         break;
+      case Z.TABEDIT:
+        if (dy) st.tabrow = Math.max(0, Math.min(allTabs().length - 1, st.tabrow + dy));
+        else if (dx) editTabs(dx);
+        break;
     }
     updateFocus();
   }
@@ -876,6 +964,7 @@
     if (editingYt) { closeTextInput(); updateFocus(); return; }
     if (st.zone === Z.YTEDIT) { pendingRemove = null; setClass($('ytedit'), 'open', false); openSettings(); updateFocus(); return; }
     if (st.zone === Z.ASSETEDIT) { pendingRemove = null; setClass($('assetedit'), 'open', false); openSettings(); updateFocus(); return; }
+    if (st.zone === Z.TABEDIT) { setClass($('tabedit'), 'open', false); openSettings(); updateFocus(); return; }
     if (st.zone === Z.EDIT) { setClass($('shelfedit'), 'open', false); openSettings(); st.row = rowsNow.length - 2; updateFocus(); return; }
     if (sheetOpen()) { closeSheets(); return; }
     if (st.zone === Z.DRAWER) { closeDrawer(); return; }
@@ -886,7 +975,7 @@
   /** The pointer focuses what it's over (the Magic Remote, or a mouse when previewing). */
   function hover(node, zone, index) {
     node.onmouseover = function () {
-      if (saverOn || (sheetOpen() !== (zone === Z.APPS || zone === Z.SETTINGS || zone === Z.EDIT || zone === Z.YTEDIT || zone === Z.ASSETEDIT))) return;
+      if (saverOn || (sheetOpen() !== (zone === Z.APPS || zone === Z.SETTINGS || zone === Z.EDIT || zone === Z.YTEDIT || zone === Z.ASSETEDIT || zone === Z.TABEDIT))) return;
       if (zone === Z.DRAWER && st.zone !== Z.DRAWER) return;
       if (zone !== Z.DRAWER && st.zone === Z.DRAWER && zone !== Z.SHELF) return;
       if (zone === Z.SHELF && st.zone === Z.DRAWER) closeDrawer();
@@ -900,6 +989,7 @@
       else if (zone === Z.EDIT) st.edit = index;
       else if (zone === Z.YTEDIT) st.ytrow = index;
       else if (zone === Z.ASSETEDIT) st.assetrow = index;
+      else if (zone === Z.TABEDIT) st.tabrow = index;
       updateFocus();
     };
     node.onclick = function () { node.onmouseover(); activate(); };

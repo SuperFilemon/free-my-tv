@@ -52,6 +52,12 @@ var Prefs = (function () {
     shelf: function () { return pick('shelf', null); },
     ytChannels: function () { return pick('ytChannels', null); },
     assets: function () { return pick('assets', null); },
+    tmdbKey: function () { return pick('tmdbKey', ''); },         // chave colada nos Ajustes (prioridade sobre config.properties)
+    youtubeKey: function () { return pick('youtubeKey', ''); },
+    tabs: function () { return pick('tabs', null); },            // ordem/visibilidade das abas; null = padrão
+    weatherDays: function () { return pick('weatherDays', 4); }, // dias do clima (hoje + N-1)
+    currency: function () { return pick('currency', 'auto'); },  // moeda de referência do câmbio
+    clock: function () { return pick('clock', 'auto'); },        // formato de hora: auto/24/12
     set: function (name, value) { v[name] = value; save(); this.version++; },
     setCoin: function (i, on) {
       var c = (pick('coins', null) || [true, true, true, true, true, true]).slice();
@@ -94,8 +100,8 @@ var Data = (function () {
   var PLACE = Place.lat + ',' + Place.lon;
   var weather = null, weatherAt = 0, fetchingWeather = false;
   (function () {
-    var w = stored('weather2');   // weather2: invalida o cache antigo de 3 dias (agora 4 dias + sol por dia)
-    if (w && w.place === PLACE) { weather = parseWeather(w.body); weatherAt = w.at; }
+    var w = stored('weather2');   // weather2: invalida o cache antigo de 3 dias (agora N dias + sol por dia)
+    if (w && w.place === PLACE) { weather = parseWeather(w.body); weatherAt = (w.days >= Prefs.weatherDays()) ? w.at : 0; }   // menos dias no cache do que o pedido → rebusca
   })();
 
   /** "2026-10-20T18:31" at the location (Open-Meteo's local time) → epoch ms. */
@@ -114,7 +120,7 @@ var Data = (function () {
       sunrise: localTime(o.daily.sunrise[0], off), sunset: localTime(o.daily.sunset[0], off), hours: [], days: []
     };
     var dl = o.daily;
-    for (var k = 0; dl && dl.time && k < dl.time.length && w.days.length < 4; k++) {
+    for (var k = 0; dl && dl.time && k < dl.time.length && w.days.length < Prefs.weatherDays(); k++) {
       w.days.push({date: dl.time[k], max: dl.temperature_2m_max[k], min: dl.temperature_2m_min[k],
         code: dl.weather_code ? dl.weather_code[k] : -1,
         sunrise: dl.sunrise ? localTime(dl.sunrise[k], off) : 0, sunset: dl.sunset ? localTime(dl.sunset[k], off) : 0});
@@ -134,13 +140,13 @@ var Data = (function () {
     fetchingWeather = true;
     var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + Place.lat + '&longitude=' + Place.lon
         + '&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min,weather_code,sunrise,sunset'
-        + '&hourly=temperature_2m,weather_code,is_day&timezone=auto&forecast_days=4';
+        + '&hourly=temperature_2m,weather_code,is_day&timezone=auto&forecast_days=' + Prefs.weatherDays();
     get(url, {}, function (err, body) {
       fetchingWeather = false;
       if (err) return;
       weather = parseWeather(body);
       weatherAt = Date.now();
-      store('weather2', {place: PLACE, body: body, at: weatherAt});
+      store('weather2', {place: PLACE, body: body, at: weatherAt, days: Prefs.weatherDays()});
       changed();
     });
   }
@@ -149,31 +155,61 @@ var Data = (function () {
 
   // Cotações da Binance: cripto em USDC + câmbio (o dólar vem de USDTBRL; o euro de EURUSDT × USDTBRL, pois a
   // Binance não lista EURBRL direto). Lista PADRÃO — o que o usuário adiciona/remove na tela "Cotações" tem prioridade.
-  var QUOTES_DEFAULT = [
-    {sym: 'BTC', pair: 'BTCUSDC', unit: 'USD'},
-    {sym: 'ETH', pair: 'ETHUSDC', unit: 'USD'},
-    {sym: 'SOL', pair: 'SOLUSDC', unit: 'USD'},
-    {sym: 'XRP', pair: 'XRPUSDC', unit: 'USD'},
-    {sym: 'USD', pair: 'USDTBRL', unit: 'BRL'},
-    {sym: 'EUR', mult: ['EURUSDT', 'USDTBRL'], unit: 'BRL'}
-  ];
+  // Moeda de referência do câmbio = a moeda local (BRL no Brasil). Cripto fica sempre em USD;
+  // moedas estrangeiras são cotadas nessa moeda local. Sem seleção manual.
+  function refCurrency() { return Place.currency; }
+  // Cripto sempre em USD; as linhas de câmbio mudam conforme a moeda escolhida.
+  function defaultQuotes(cur) {
+    var crypto = [
+      {sym: 'BTC', pair: 'BTCUSDC', unit: 'USD'},
+      {sym: 'ETH', pair: 'ETHUSDC', unit: 'USD'},
+      {sym: 'SOL', pair: 'SOLUSDC', unit: 'USD'},
+      {sym: 'XRP', pair: 'XRPUSDC', unit: 'USD'}
+    ];
+    if (cur === 'USD') return crypto.concat([
+      {sym: 'EUR', pair: 'EURUSDT', unit: 'USD'},
+      {sym: 'GBP', pair: 'GBPUSDT', unit: 'USD'}
+    ]);
+    if (cur === 'EUR') return crypto.concat([
+      {sym: 'USD', div: ['EURUSDT'], unit: 'EUR'},                 // USD/EUR = 1 / EURUSDT
+      {sym: 'GBP', mult: ['GBPUSDT'], div: ['EURUSDT'], unit: 'EUR'} // GBP/EUR = GBPUSDT / EURUSDT
+    ]);
+    return crypto.concat([                                          // BRL (padrão)
+      {sym: 'USD', pair: 'USDTBRL', unit: 'BRL'},
+      {sym: 'EUR', mult: ['EURUSDT', 'USDTBRL'], unit: 'BRL'}
+    ]);
+  }
   function assetsList() {
     var saved = Prefs.assets();
-    return (saved && saved.length) ? saved : QUOTES_DEFAULT;
+    return (saved && saved.length) ? saved : defaultQuotes(refCurrency());
   }
   function pairLabel(q) { return q.sym + '/' + q.unit; }   // ex.: BTC/USD, USD/BRL
 
+  // Moedas fiat suportadas pelo provedor de câmbio (Frankfurter / ECB).
+  var FIAT = {AUD:1, BGN:1, BRL:1, CAD:1, CHF:1, CNY:1, CZK:1, DKK:1, EUR:1, GBP:1, HKD:1, HUF:1, IDR:1, ILS:1, INR:1, ISK:1, JPY:1, KRW:1, MXN:1, MYR:1, NOK:1, NZD:1, PHP:1, PLN:1, RON:1, SEK:1, SGD:1, THB:1, TRY:1, USD:1, ZAR:1};
+  function isFiat(sym) { return !!FIAT[(sym || '').toUpperCase()]; }
+  function fiatKey(sym, unit) { return sym.toUpperCase() + '>' + unit.toUpperCase(); }
+
   var prices = [], changes = [], pricesAt = 0, fetchingPrices = false;
+  var tick = {};                               // último ticker da Binance por símbolo: {last, pct}
+  var fx = {}, fxAt = 0, fetchingFx = false;   // câmbio fiat (Frankfurter): 'USD>BRL' -> {last, pct}
   function resetPrices() { prices = []; changes = []; for (var i = 0; i < assetsList().length; i++) { prices.push(NaN); changes.push(NaN); } }
   resetPrices();
 
-  /** Símbolos únicos da Binance a buscar, da lista efetiva. */
+  /** Símbolos da Binance a buscar (só das cotações não-fiat da lista efetiva). */
   function pairsNeeded() {
     var set = {}, out = [], l = assetsList();
     for (var i = 0; i < l.length; i++) {
-      var ps = l[i].mult || [l[i].pair];
-      for (var j = 0; j < ps.length; j++) if (!set[ps[j]]) { set[ps[j]] = true; out.push(ps[j]); }
+      if (l[i].fiat) continue;
+      var ps = (l[i].mult || [l[i].pair]).concat(l[i].div || []);   // multiplicadores e divisores (câmbio inverso/cruzado)
+      for (var j = 0; j < ps.length; j++) if (ps[j] && !set[ps[j]]) { set[ps[j]] = true; out.push(ps[j]); }
     }
+    return out;
+  }
+  /** Pares de câmbio fiat a buscar no Frankfurter: {sym, unit} (ignora sym == unit). */
+  function fiatNeeded() {
+    var out = [], l = assetsList();
+    for (var i = 0; i < l.length; i++) if (l[i].fiat && l[i].sym.toUpperCase() !== l[i].unit.toUpperCase()) out.push({sym: l[i].sym.toUpperCase(), unit: l[i].unit.toUpperCase()});
     return out;
   }
 
@@ -185,53 +221,106 @@ var Data = (function () {
     return out;
   }
 
-  /** Lê o ticker da Binance e calcula cada cotação: par direto, ou produto de dois (euro em reais). */
-  function parsePrices(listData) {
-    var tick = {}, found = 0;
+  /** Recalcula prices[]/changes[] do que já está em memória (tick da Binance + fx). Instantâneo, sem rede. */
+  function computePrices() {
+    var l = assetsList();
+    if (prices.length !== l.length) resetPrices();
+    for (var k = 0; k < l.length; k++) {
+      var q = l[k];
+      if (q.fiat) {
+        if (q.sym.toUpperCase() === q.unit.toUpperCase()) { prices[k] = 1; changes[k] = 0; continue; }
+        var r = fx[fiatKey(q.sym, q.unit)];
+        if (r) { prices[k] = r.last; changes[k] = r.pct; }
+        continue;
+      }
+      var muls = q.mult || (q.pair ? [q.pair] : []), divs = q.div || [];
+      var val = 1, pct = 0, ok = muls.length > 0;
+      for (var m = 0; m < muls.length; m++) { var a = tick[muls[m]]; if (!a) { ok = false; break; } val *= a.last; pct += isNaN(a.pct) ? 0 : a.pct; }
+      for (var dq = 0; ok && dq < divs.length; dq++) { var b = tick[divs[dq]]; if (!b || !b.last) { ok = false; break; } val /= b.last; pct -= isNaN(b.pct) ? 0 : b.pct; }
+      if (ok) { prices[k] = val; changes[k] = pct; }
+    }
+  }
+
+  /** Mescla o ticker da Binance em memória. */
+  function ingestBinance(listData) {
+    var found = 0;
     for (var i = 0; listData && i < listData.length; i++) {
       var last = parseFloat(listData[i].lastPrice), open = parseFloat(listData[i].openPrice);
       tick[listData[i].symbol] = {last: last, pct: open > 0 ? (last - open) / open * 100 : NaN};
       found++;
     }
-    var l = assetsList();
-    for (var k = 0; k < l.length; k++) {
-      var q = l[k];
-      if (q.mult) {
-        var a = tick[q.mult[0]], b = tick[q.mult[1]];
-        if (a && b) { prices[k] = a.last * b.last; changes[k] = (isNaN(a.pct) ? 0 : a.pct) + (isNaN(b.pct) ? 0 : b.pct); }
-      } else if (tick[q.pair]) {
-        prices[k] = tick[q.pair].last;
-        changes[k] = tick[q.pair].pct;
-      }
-    }
     return found;
+  }
+  function parsePrices(listData) { var n = ingestBinance(listData); computePrices(); return n; }   // compat.: carga do cache
+
+  function dayBefore(dateStr) {   // 'YYYY-MM-DD' - 1 dia (o Frankfurter resolve pro dia útil anterior)
+    var p = (dateStr || '').split('-');
+    var d = new Date(Date.UTC(+p[0], p[1] - 1, +p[2]) - 86400000);
+    return d.getUTCFullYear() + '-' + ('0' + (d.getUTCMonth() + 1)).slice(-2) + '-' + ('0' + d.getUTCDate()).slice(-2);
+  }
+
+  // Câmbio fiat via Frankfurter (ECB, grátis, sem chave): 1 SYM em UNIT = 1 / (rate de SYM com base UNIT).
+  // A variação compara com o dia útil ANTERIOR à data da cotação (o ECB publica 1x/dia útil).
+  function refreshFx(force) {
+    if (force) fxAt = 0;
+    var pairs = fiatNeeded();
+    if (!pairs.length) { fetchingFx = false; return; }
+    var now = Date.now();
+    if (fetchingFx || (fxAt && now - fxAt < 30 * 60000 && now >= fxAt)) return;
+    fetchingFx = true;
+    var byUnit = {};
+    for (var i = 0; i < pairs.length; i++) (byUnit[pairs[i].unit] = byUnit[pairs[i].unit] || []).push(pairs[i].sym);
+    var units = Object.keys(byUnit), pending = units.length;
+    function settle() { if (--pending <= 0) { fetchingFx = false; fxAt = Date.now(); store('fx2', {rates: fx, at: fxAt}); computePrices(); changed(); } }
+    units.forEach(function (unit) {
+      var syms = byUnit[unit].join(',');
+      get('https://api.frankfurter.dev/v1/latest?base=' + unit + '&symbols=' + syms, {}, function (e1, today) {
+        if (e1 || !today || !today.rates) { settle(); return; }
+        function apply(prev) {
+          byUnit[unit].forEach(function (sym) {
+            var r = today.rates[sym];
+            if (!r) return;
+            var val = 1 / r, pct = NaN;
+            if (prev && prev.rates && prev.rates[sym]) pct = (val / (1 / prev.rates[sym]) - 1) * 100;
+            fx[fiatKey(sym, unit)] = {last: val, pct: pct};
+          });
+          settle();
+        }
+        get('https://api.frankfurter.dev/v1/' + dayBefore(today.date) + '?base=' + unit + '&symbols=' + syms, {}, function (e2, prev) { apply(e2 ? null : prev); });
+      });
+    });
   }
 
   (function () {
     var p = stored('prices2');
-    if (p && p.symbols === pairsNeeded().join(',') && parsePrices(p.body)) pricesAt = p.at;
+    if (p && p.body && ingestBinance(p.body)) pricesAt = p.at || 0;
+    var f = stored('fx2');
+    if (f && f.rates) { fx = f.rates; fxAt = f.at || 0; }
+    computePrices();
   })();
 
   function refreshPrices(force) {
-    if (force) { pricesAt = 0; resetPrices(); }
-    var now = Date.now();
-    if (!activeCoins().length || fetchingPrices || (now - pricesAt < 5 * 60000 && now >= pricesAt && !isNaN(prices[0]))) return;
+    if (force) { pricesAt = 0; resetPrices(); computePrices(); }
+    if (!activeCoins().length) return;
+    refreshFx(force);                           // câmbio fiat (Frankfurter) em paralelo
+    var now = Date.now(), need = pairsNeeded();
+    if (!need.length || fetchingPrices || (pricesAt && now - pricesAt < 5 * 60000 && now >= pricesAt)) return;
     fetchingPrices = true;
-    var need = pairsNeeded();
     var symbols = need.map(function (s) { return '%22' + s + '%22'; }).join(',');
     var path = '/api/v3/ticker/24hr?type=MINI&symbols=%5B' + symbols + '%5D';
     // Binance.com recusa os EUA (HTTP 451); a Binance.US responde a mesma chamada.
     var hosts = ['https://api.binance.com', 'https://api.binance.us'];
     (function next(h) {
       get(hosts[h] + path, {}, function (err, body) {
-        if (err || !parsePrices(body)) {
+        if (err || !ingestBinance(body)) {
           if (h + 1 < hosts.length) next(h + 1);
           else fetchingPrices = false;
           return;
         }
         fetchingPrices = false;
         pricesAt = Date.now();
-        store('prices2', {symbols: need.join(','), body: body, at: pricesAt});
+        store('prices2', {body: body, at: pricesAt});
+        computePrices();
         changed();
       });
     })(0);
@@ -243,33 +332,49 @@ var Data = (function () {
     return false;
   }
 
-  /** Valida o símbolo na Binance (par USDC; se não houver, USDT) e adiciona. done(ok, símboloOuErro). */
+  /** Adiciona cripto (Binance, par USDC/USDT) ou moeda fiat (Frankfurter, cotada na moeda de referência). done(ok, rótuloOuErro). */
   function addAsset(input, done) {
     var sym = (input || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (!sym) { done(false, tr('vazio', 'empty', 'vacío')); return; }
     if (assetKnown(sym)) { done(false, tr('já está na lista', 'already in the list', 'ya está en la lista')); return; }
+    if (isFiat(sym)) {
+      var unit = refCurrency().toUpperCase();
+      if (sym === unit) { done(false, tr('essa já é a moeda de referência', 'that is the reference currency', 'esa es la moneda de referencia')); return; }
+      get('https://api.frankfurter.dev/v1/latest?base=' + unit + '&symbols=' + sym, {}, function (err, body) {
+        if (!err && body && body.rates && body.rates[sym]) {
+          var list = assetsList().slice();
+          list.push({sym: sym, unit: unit, fiat: true});
+          Prefs.set('assets', list);
+          refreshPrices(true); changed();
+          done(true, sym + '/' + unit);
+        } else {
+          done(false, tr('moeda não suportada', 'currency not supported', 'moneda no admitida'));
+        }
+      });
+      return;
+    }
     function tryQuote(quote, next) {
       get('https://api.binance.com/api/v3/ticker/price?symbol=' + sym + quote, {}, function (err, body) {
         if (!err && body && body.price) {
           var list = assetsList().slice();
           list.push({sym: sym, pair: sym + quote, unit: 'USD'});
           Prefs.set('assets', list);
-          refreshPrices(true);
+          refreshPrices(true); changed();
           done(true, sym);
         } else next();
       });
     }
-    tryQuote('USDC', function () { tryQuote('USDT', function () { done(false, tr('não achei na Binance', 'not on Binance', 'no está en Binance')); }); });
+    tryQuote('USDC', function () { tryQuote('USDT', function () { done(false, tr('não achei (cripto na Binance / moeda no Frankfurter)', 'not found (crypto on Binance / currency on Frankfurter)', 'no encontrado')); }); });
   }
 
   function removeAsset(sym) {
     Prefs.set('assets', assetsList().filter(function (q) { return q.sym !== sym; }));
-    refreshPrices(true);
+    refreshPrices(true); changed();
   }
 
   // MARK: - YouTube (últimos vídeos dos canais que o Filemon acompanha, via uploads playlists)
 
-  var YT_KEY = (CONFIG.youtubeKey || '').trim();
+  var YT_KEY = (Prefs.youtubeKey() || CONFIG.youtubeKey || '').trim();
 
   /** Lista do config: "uploads|Nome;;uploads|Nome" → [{uploads, title}] (aceita também só os IDs, formato antigo). */
   function parseChannels(str) {
@@ -368,7 +473,7 @@ var Data = (function () {
 
   // MARK: - Picks (TMDB)
 
-  var KEY = (CONFIG.tmdbKey || '').trim();
+  var KEY = (Prefs.tmdbKey() || CONFIG.tmdbKey || '').trim();
   var REGION = Place.country;
   var API = 'https://api.themoviedb.org/3';
 
@@ -672,6 +777,19 @@ var Data = (function () {
     addYouTubeChannel: addYouTubeChannel,
     removeYouTubeChannel: removeYouTubeChannel,
     settingsChanged: function () { pricesAt = 0; refreshPrices(); changed(); },
+    // Chave TMDB colada nos Ajustes: aplica, recarrega os filmes/séries.
+    setTmdbKey: function (k) { Prefs.set('tmdbKey', (k || '').trim()); KEY = (Prefs.tmdbKey() || CONFIG.tmdbKey || '').trim(); picks = []; listAt = 0; stamp = ''; recsError = ''; refreshRecs(); changed(); },
+    // Chave YouTube colada nos Ajustes: aplica, recarrega os vídeos (e faz a aba YouTube aparecer/sumir).
+    setYouTubeKey: function (k) { Prefs.set('youtubeKey', (k || '').trim()); YT_KEY = (Prefs.youtubeKey() || CONFIG.youtubeKey || '').trim(); ytVideos = []; ytAt = 0; refreshYouTube(true); changed(); },
+    // Dias do clima: aplica na hora (reparseia o cache, se tiver dias suficientes) e rebusca.
+    setWeatherDays: function (n) {
+      Prefs.set('weatherDays', n);
+      var w = stored('weather2');
+      if (w && w.place === PLACE && w.body && w.body.daily && w.body.daily.time && w.body.daily.time.length >= n) { weather = parseWeather(w.body); changed(); }
+      weatherAt = 0; refreshWeather();
+    },
+    // Moeda de referência do câmbio: refaz a lista padrão e rebusca os preços.
+    setCurrency: function (c) { Prefs.set('currency', c); refreshPrices(true); changed(); },
     get weather() { return weather; },
     get weatherAt() { return weatherAt; },
     prices: prices,
@@ -705,7 +823,8 @@ var Data = (function () {
     money: function (i) {
       var q = assetsList()[i], v = prices[i];
       if (!q) return '';
-      var s = q.unit === 'BRL' ? 'R$ ' : q.unit === 'EUR' ? '€' : '$';
+      var SYMS = {BRL: 'R$ ', EUR: '€', GBP: '£', USD: '$', JPY: '¥', CNY: '¥', CHF: 'CHF ', AUD: 'A$', CAD: 'C$'};
+      var s = SYMS[q.unit] || (q.unit + ' ');
       if (isNaN(v)) return s + '—';
       var dp = v >= 1000 ? 0 : v >= 1 ? 2 : v >= 0.01 ? 4 : 6;   // casas decimais conforme o tamanho do preço
       return s + fmt(v, dp);
@@ -725,7 +844,9 @@ var Data = (function () {
     },
     time: function (at) {
       var d = new Date(at), h = d.getHours(), m = d.getMinutes();
-      if (I18N.lang === 'en') return (h % 12 || 12) + ':' + (m < 10 ? '0' : '') + m + (h < 12 ? ' AM' : ' PM');
+      var c = Prefs.clock();   // auto: 12h só em inglês; senão força 12/24
+      var ampm = c === '12' || (c === 'auto' && I18N.lang === 'en');
+      if (ampm) return (h % 12 || 12) + ':' + (m < 10 ? '0' : '') + m + (h < 12 ? ' AM' : ' PM');
       return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
     },
     /** Short weekday name for a "YYYY-MM-DD" date, in the current language. */

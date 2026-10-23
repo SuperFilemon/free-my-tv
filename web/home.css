@@ -490,7 +490,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .cell.focus .face { -webkit-transform: scale(1.08); transform: scale(1.08); box-shadow: 0 16px 34px rgba(0, 0, 0, 0.55), inset 0 0 0 2px rgba(255, 255, 255, 0.4); }
 .cell.focus .label { color: #FFF; }
 
-#settings .box, #shelfedit .box, #ytedit .box, #assetedit .box {
+#settings .box, #shelfedit .box, #ytedit .box, #assetedit .box, #tabedit .box {
   position: absolute;
   left: 560px;
   top: 150px;
