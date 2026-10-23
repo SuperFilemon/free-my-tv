@@ -50,9 +50,11 @@ var Prefs = (function () {
     quotes: function () { return pick('quotes', CONFIG.showCrypto !== false); },
     coin: function (i) { var c = pick('coins', null); return c ? c[i] !== false : true; },
     shelf: function () { return pick('shelf', null); },
+    ytChannels: function () { return pick('ytChannels', null); },
+    assets: function () { return pick('assets', null); },
     set: function (name, value) { v[name] = value; save(); this.version++; },
     setCoin: function (i, on) {
-      var c = (pick('coins', null) || [true, true, true, true]).slice();
+      var c = (pick('coins', null) || [true, true, true, true, true, true]).slice();
       c[i] = on;
       this.set('coins', c);
     }
@@ -92,7 +94,7 @@ var Data = (function () {
   var PLACE = Place.lat + ',' + Place.lon;
   var weather = null, weatherAt = 0, fetchingWeather = false;
   (function () {
-    var w = stored('weather');
+    var w = stored('weather2');   // weather2: invalida o cache antigo de 3 dias (agora 4 dias + sol por dia)
     if (w && w.place === PLACE) { weather = parseWeather(w.body); weatherAt = w.at; }
   })();
 
@@ -109,8 +111,14 @@ var Data = (function () {
     var w = {
       temp: o.current.temperature_2m, code: o.current.weather_code, isDay: o.current.is_day !== 0,
       max: o.daily.temperature_2m_max[0], min: o.daily.temperature_2m_min[0],
-      sunrise: localTime(o.daily.sunrise[0], off), sunset: localTime(o.daily.sunset[0], off), hours: []
+      sunrise: localTime(o.daily.sunrise[0], off), sunset: localTime(o.daily.sunset[0], off), hours: [], days: []
     };
+    var dl = o.daily;
+    for (var k = 0; dl && dl.time && k < dl.time.length && w.days.length < 4; k++) {
+      w.days.push({date: dl.time[k], max: dl.temperature_2m_max[k], min: dl.temperature_2m_min[k],
+        code: dl.weather_code ? dl.weather_code[k] : -1,
+        sunrise: dl.sunrise ? localTime(dl.sunrise[k], off) : 0, sunset: dl.sunset ? localTime(dl.sunset[k], off) : 0});
+    }
     var hr = o.hourly;
     for (var i = 0; hr && i < hr.time.length && w.hours.length < 6; i++) {
       var at = localTime(hr.time[i], off);
@@ -125,85 +133,237 @@ var Data = (function () {
     if (fetchingWeather || (now - weatherAt < 30 * 60000 && now >= weatherAt)) return;
     fetchingWeather = true;
     var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + Place.lat + '&longitude=' + Place.lon
-        + '&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset'
-        + '&hourly=temperature_2m,weather_code,is_day&timezone=auto&forecast_days=2';
+        + '&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min,weather_code,sunrise,sunset'
+        + '&hourly=temperature_2m,weather_code,is_day&timezone=auto&forecast_days=4';
     get(url, {}, function (err, body) {
       fetchingWeather = false;
       if (err) return;
       weather = parseWeather(body);
       weatherAt = Date.now();
-      store('weather', {place: PLACE, body: body, at: weatherAt});
+      store('weather2', {place: PLACE, body: body, at: weatherAt});
       changed();
     });
   }
 
   // MARK: - Prices
 
-  var COINS = ['BTC', 'ETH', 'SOL', 'USDT'];
-  var CURRENCY = Place.currency;
-  var QUOTE = CURRENCY === 'USD' ? 'USDT' : CURRENCY;
-  /** Binance refuses the whole request when it has no pairs in the currency (INR...): the prices go in dollars then. */
-  function inDollars() {
-    store('dollarsFor', CURRENCY);
-    CURRENCY = 'USD';
-    QUOTE = 'USDT';
+  // Cotações da Binance: cripto em USDC + câmbio (o dólar vem de USDTBRL; o euro de EURUSDT × USDTBRL, pois a
+  // Binance não lista EURBRL direto). Lista PADRÃO — o que o usuário adiciona/remove na tela "Cotações" tem prioridade.
+  var QUOTES_DEFAULT = [
+    {sym: 'BTC', pair: 'BTCUSDC', unit: 'USD'},
+    {sym: 'ETH', pair: 'ETHUSDC', unit: 'USD'},
+    {sym: 'SOL', pair: 'SOLUSDC', unit: 'USD'},
+    {sym: 'XRP', pair: 'XRPUSDC', unit: 'USD'},
+    {sym: 'USD', pair: 'USDTBRL', unit: 'BRL'},
+    {sym: 'EUR', mult: ['EURUSDT', 'USDTBRL'], unit: 'BRL'}
+  ];
+  function assetsList() {
+    var saved = Prefs.assets();
+    return (saved && saved.length) ? saved : QUOTES_DEFAULT;
   }
-  if (stored('dollarsFor') === CURRENCY && CURRENCY !== 'USD') {
-    CURRENCY = 'USD';
-    QUOTE = 'USDT';
-  }
-  var prices = [NaN, NaN, NaN, NaN], changes = [NaN, NaN, NaN, NaN], pricesAt = 0, fetchingPrices = false;
+  function pairLabel(q) { return q.sym + '/' + q.unit; }   // ex.: BTC/USD, USD/BRL
 
-  /** Indexes in COINS of the coins that are on (the dollar only in Brazilian reais, where Binance lists it). */
-  function activeCoins() {
-    var out = [];
-    if (!Prefs.quotes()) return out;
-    for (var i = 0; i < COINS.length; i++) if (Prefs.coin(i) && (i < 3 || CURRENCY === 'BRL')) out.push(i);
+  var prices = [], changes = [], pricesAt = 0, fetchingPrices = false;
+  function resetPrices() { prices = []; changes = []; for (var i = 0; i < assetsList().length; i++) { prices.push(NaN); changes.push(NaN); } }
+  resetPrices();
+
+  /** Símbolos únicos da Binance a buscar, da lista efetiva. */
+  function pairsNeeded() {
+    var set = {}, out = [], l = assetsList();
+    for (var i = 0; i < l.length; i++) {
+      var ps = l[i].mult || [l[i].pair];
+      for (var j = 0; j < ps.length; j++) if (!set[ps[j]]) { set[ps[j]] = true; out.push(ps[j]); }
+    }
     return out;
   }
 
-  function parsePrices(list) {
-    var found = 0;
-    for (var i = 0; list && i < list.length; i++) {
-      for (var k = 0; k < COINS.length; k++) {
-        if (list[i].symbol !== COINS[k] + QUOTE) continue;
-        found++;
-        var last = parseFloat(list[i].lastPrice), open = parseFloat(list[i].openPrice);
-        prices[k] = last;
-        changes[k] = open > 0 ? (last - open) / open * 100 : NaN;
+  /** Índices das cotações (todas, quando o widget está ligado). */
+  function activeCoins() {
+    var out = [];
+    if (!Prefs.quotes()) return out;
+    for (var i = 0; i < assetsList().length; i++) out.push(i);
+    return out;
+  }
+
+  /** Lê o ticker da Binance e calcula cada cotação: par direto, ou produto de dois (euro em reais). */
+  function parsePrices(listData) {
+    var tick = {}, found = 0;
+    for (var i = 0; listData && i < listData.length; i++) {
+      var last = parseFloat(listData[i].lastPrice), open = parseFloat(listData[i].openPrice);
+      tick[listData[i].symbol] = {last: last, pct: open > 0 ? (last - open) / open * 100 : NaN};
+      found++;
+    }
+    var l = assetsList();
+    for (var k = 0; k < l.length; k++) {
+      var q = l[k];
+      if (q.mult) {
+        var a = tick[q.mult[0]], b = tick[q.mult[1]];
+        if (a && b) { prices[k] = a.last * b.last; changes[k] = (isNaN(a.pct) ? 0 : a.pct) + (isNaN(b.pct) ? 0 : b.pct); }
+      } else if (tick[q.pair]) {
+        prices[k] = tick[q.pair].last;
+        changes[k] = tick[q.pair].pct;
       }
     }
     return found;
   }
 
   (function () {
-    var p = stored('prices');
-    if (p && p.quote === QUOTE && parsePrices(p.body)) pricesAt = p.at;
+    var p = stored('prices2');
+    if (p && p.symbols === pairsNeeded().join(',') && parsePrices(p.body)) pricesAt = p.at;
   })();
 
-  function refreshPrices() {
-    var coins = activeCoins(), now = Date.now();
-    if (!coins.length || fetchingPrices || (now - pricesAt < 5 * 60000 && now >= pricesAt)) return;
+  function refreshPrices(force) {
+    if (force) { pricesAt = 0; resetPrices(); }
+    var now = Date.now();
+    if (!activeCoins().length || fetchingPrices || (now - pricesAt < 5 * 60000 && now >= pricesAt && !isNaN(prices[0]))) return;
     fetchingPrices = true;
-    var symbols = coins.map(function (i) { return '%22' + COINS[i] + QUOTE + '%22'; }).join(',');
+    var need = pairsNeeded();
+    var symbols = need.map(function (s) { return '%22' + s + '%22'; }).join(',');
     var path = '/api/v3/ticker/24hr?type=MINI&symbols=%5B' + symbols + '%5D';
-    // Binance.com refuses the US (HTTP 451); Binance.US answers the same call in dollars.
+    // Binance.com recusa os EUA (HTTP 451); a Binance.US responde a mesma chamada.
     var hosts = ['https://api.binance.com', 'https://api.binance.us'];
     (function next(h) {
       get(hosts[h] + path, {}, function (err, body) {
-        // A pair Binance doesn't list (HTTP 400): the prices go in dollars.
-        if (err && err.message === 'HTTP 400' && QUOTE !== 'USDT') { fetchingPrices = false; inDollars(); refreshPrices(); return; }
         if (err || !parsePrices(body)) {
-          if (h + 1 < hosts.length && !(err && err.message === 'HTTP 400')) next(h + 1);
+          if (h + 1 < hosts.length) next(h + 1);
           else fetchingPrices = false;
           return;
         }
         fetchingPrices = false;
         pricesAt = Date.now();
-        store('prices', {quote: QUOTE, body: body, at: pricesAt});
+        store('prices2', {symbols: need.join(','), body: body, at: pricesAt});
         changed();
       });
     })(0);
+  }
+
+  function assetKnown(sym) {
+    var l = assetsList();
+    for (var i = 0; i < l.length; i++) if (l[i].sym.toUpperCase() === sym.toUpperCase()) return true;
+    return false;
+  }
+
+  /** Valida o símbolo na Binance (par USDC; se não houver, USDT) e adiciona. done(ok, símboloOuErro). */
+  function addAsset(input, done) {
+    var sym = (input || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!sym) { done(false, tr('vazio', 'empty', 'vacío')); return; }
+    if (assetKnown(sym)) { done(false, tr('já está na lista', 'already in the list', 'ya está en la lista')); return; }
+    function tryQuote(quote, next) {
+      get('https://api.binance.com/api/v3/ticker/price?symbol=' + sym + quote, {}, function (err, body) {
+        if (!err && body && body.price) {
+          var list = assetsList().slice();
+          list.push({sym: sym, pair: sym + quote, unit: 'USD'});
+          Prefs.set('assets', list);
+          refreshPrices(true);
+          done(true, sym);
+        } else next();
+      });
+    }
+    tryQuote('USDC', function () { tryQuote('USDT', function () { done(false, tr('não achei na Binance', 'not on Binance', 'no está en Binance')); }); });
+  }
+
+  function removeAsset(sym) {
+    Prefs.set('assets', assetsList().filter(function (q) { return q.sym !== sym; }));
+    refreshPrices(true);
+  }
+
+  // MARK: - YouTube (últimos vídeos dos canais que o Filemon acompanha, via uploads playlists)
+
+  var YT_KEY = (CONFIG.youtubeKey || '').trim();
+
+  /** Lista do config: "uploads|Nome;;uploads|Nome" → [{uploads, title}] (aceita também só os IDs, formato antigo). */
+  function parseChannels(str) {
+    var out = [];
+    (str || '').split(';;').forEach(function (part) {
+      part = part.trim(); if (!part) return;
+      var bar = part.indexOf('|'), up = (bar >= 0 ? part.slice(0, bar) : part).trim();
+      if (up) out.push({uploads: up, title: bar >= 0 ? part.slice(bar + 1).trim() : up});
+    });
+    return out;
+  }
+  var YT_DEFAULT = parseChannels(CONFIG.youtubeChannels);
+
+  /** Canais efetivos: os que o usuário salvou nos Ajustes têm prioridade; senão, os do config. */
+  function ytChannels() {
+    var saved = Prefs.ytChannels();
+    return (saved && saved.length) ? saved : YT_DEFAULT;
+  }
+
+  var ytVideos = [], ytAt = 0, fetchingYt = false;
+  (function () {
+    var y = stored('youtube2');
+    if (y && y.v) { ytVideos = y.v; ytAt = y.at; }
+  })();
+
+  function refreshYouTube(force) {
+    var chans = ytChannels(), now = Date.now();
+    if (force) ytAt = 0;
+    if (!YT_KEY || !chans.length || fetchingYt || (now - ytAt < 30 * 60000 && now >= ytAt && ytVideos.length)) return;
+    fetchingYt = true;
+    var all = [], left = chans.length;
+    chans.forEach(function (ch) {
+      var url = 'https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=4&playlistId='
+          + encodeURIComponent(ch.uploads) + '&key=' + encodeURIComponent(YT_KEY);
+      get(url, {}, function (err, body) {
+        if (!err && body && body.items) {
+          for (var i = 0; i < body.items.length; i++) {
+            var s = body.items[i].snippet, rid = s.resourceId || {};
+            if (!rid.videoId || !s.thumbnails) continue;
+            var th = s.thumbnails.high || s.thumbnails.medium || s.thumbnails.default || {};
+            all.push({title: s.title, videoId: rid.videoId, chId: ch.uploads,
+              channel: ch.title || s.videoOwnerChannelTitle || s.channelTitle || '', thumb: th.url || '', at: s.publishedAt || ''});
+          }
+        }
+        if (--left === 0) {
+          all.sort(function (a, b) { return a.at < b.at ? 1 : a.at > b.at ? -1 : 0; });
+          // 1 vídeo por canal (o mais recente de cada), para nenhum canal dominar a lista.
+          var seen = {}, dedup = [];
+          for (var k = 0; k < all.length; k++) { if (!seen[all[k].chId]) { seen[all[k].chId] = 1; dedup.push(all[k]); } }
+          ytVideos = dedup;
+          ytAt = Date.now();
+          fetchingYt = false;
+          store('youtube2', {v: dedup, at: ytAt});
+          changed();
+        }
+      });
+    });
+  }
+
+  /** Grava o canal (snippet+contentDetails) na lista do usuário. done(ok, nomeOuErro). */
+  function saveChannel(item, done) {
+    var up = item.contentDetails.relatedPlaylists.uploads, title = item.snippet.title;
+    var list = ytChannels().slice();
+    for (var i = 0; i < list.length; i++) if (list[i].uploads === up) { done(false, tr('já está na lista', 'already in the list', 'ya está en la lista')); return; }
+    list.unshift({uploads: up, title: title});
+    Prefs.set('ytChannels', list);
+    refreshYouTube(true);
+    done(true, title);
+  }
+
+  /** Resolve um @handle / link / nome e adiciona o canal à lista. done(ok, nomeOuErro). */
+  function addYouTubeChannel(input, done) {
+    var h = (input || '').trim().replace(/^.*youtube\.com\//i, '').replace(/^@/, '').replace(/[\/?].*$/, '').trim();
+    if (!h) { done(false, tr('vazio', 'empty', 'vacío')); return; }
+    if (!YT_KEY) { done(false, tr('sem chave', 'no key', 'sin clave')); return; }
+    get('https://www.googleapis.com/youtube/v3/channels?part=snippet,contentDetails&forHandle=@' + encodeURIComponent(h) + '&key=' + encodeURIComponent(YT_KEY), {}, function (err, body) {
+      var items = body && body.items;
+      if (!err && items && items.length) { saveChannel(items[0], done); return; }
+      // fallback: busca por nome
+      get('https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&maxResults=1&q=' + encodeURIComponent(h) + '&key=' + encodeURIComponent(YT_KEY), {}, function (e2, b2) {
+        var it = b2 && b2.items && b2.items[0];
+        if (e2 || !it) { done(false, tr('não encontrado', 'not found', 'no encontrado')); return; }
+        get('https://www.googleapis.com/youtube/v3/channels?part=snippet,contentDetails&id=' + encodeURIComponent(it.snippet.channelId) + '&key=' + encodeURIComponent(YT_KEY), {}, function (e3, b3) {
+          var ci = b3 && b3.items && b3.items[0];
+          if (e3 || !ci) { done(false, tr('não encontrado', 'not found', 'no encontrado')); return; }
+          saveChannel(ci, done);
+        });
+      });
+    });
+  }
+
+  function removeYouTubeChannel(up) {
+    Prefs.set('ytChannels', ytChannels().filter(function (c) { return c.uploads !== up; }));
+    refreshYouTube(true);
   }
 
   // MARK: - Picks (TMDB)
@@ -279,7 +439,8 @@ var Data = (function () {
   }
 
   /** This hour's 3 picks: movies ("movie"), shows ("tv") or both (null). */
-  function now(kind) {
+  function now(kind, n) {
+    n = n || 3;
     var list = [];
     if (!KEY) return list;
     for (var i = 0; i < picks.length; i++) {
@@ -288,8 +449,8 @@ var Data = (function () {
     }
     if (!list.length) return list;
     var hour = Math.floor(Date.now() / 3600000), out = [], seen = {};
-    for (var j = 0; j < list.length && out.length < 3; j++) {
-      var q = list[(hour * 3 + j) % list.length], f = franchise(q.title);
+    for (var j = 0; j < list.length && out.length < n; j++) {
+      var q = list[(hour * n + j) % list.length], f = franchise(q.title);
       if (!seen[f]) { seen[f] = true; out.push(q); }
     }
     return out;
@@ -484,7 +645,7 @@ var Data = (function () {
   function all() {
     var out = [], seen = {}, kinds = [null, 'movie', 'tv'];
     for (var k = 0; k < kinds.length; k++) {
-      var list = now(kinds[k]);
+      var list = now(kinds[k], 7);
       for (var i = 0; i < list.length; i++) if (!seen[keyOf(list[i])]) { seen[keyOf(list[i])] = true; out.push(list[i]); }
     }
     return out;
@@ -499,13 +660,17 @@ var Data = (function () {
   var SYMBOLS = {USD: '$', BRL: 'R$ ', EUR: '€', GBP: '£', JPY: '¥'};
 
   return {
-    COINS: COINS,
     city: Place.city,
-    currency: CURRENCY,
+    currency: Place.currency,
     onChange: function (fn) { listeners.push(fn); },
     setApps: function (apps) { installed = apps; },
     appFor: appFor,
-    refresh: function () { refreshWeather(); refreshPrices(); refreshRecs(); },
+    refresh: function () { refreshWeather(); refreshPrices(); refreshRecs(); refreshYouTube(); },
+    hasYouTube: function () { return !!YT_KEY && ytChannels().length > 0; },
+    youtube: function (n) { return n ? ytVideos.slice(0, n) : ytVideos.slice(); },
+    ytList: function () { return ytChannels().slice(); },
+    addYouTubeChannel: addYouTubeChannel,
+    removeYouTubeChannel: removeYouTubeChannel,
     settingsChanged: function () { pricesAt = 0; refreshPrices(); changed(); },
     get weather() { return weather; },
     get weatherAt() { return weatherAt; },
@@ -522,8 +687,8 @@ var Data = (function () {
     /** Night at the location: from sunset to sunrise (the last forecast; without one, 6:00 and 18:00). */
     isNight: function (at) {
       var theme = Prefs.theme();
-      if (theme === 'dark') return true;
-      if (theme === 'light') return false;
+      if (theme === 'dark' || theme === 'meianoite' || theme === 'oled' || theme === 'carvao') return true;
+      if (theme === 'light' || theme === 'areia' || theme === 'nevoa' || theme === 'salvia') return false;
       var d = new Date(at), mins = d.getHours() * 60 + d.getMinutes();
       function hm(t, fallback) { if (!t) return fallback; var x = new Date(t); return x.getHours() * 60 + x.getMinutes(); }
       var rise = hm(weather && weather.sunrise, 360), set = hm(weather && weather.sunset, 1080);
@@ -537,10 +702,13 @@ var Data = (function () {
       if (v >= 100) return fmt(v, 0);
       return fmt(v, 2);
     },
-    money: function (v) {
-      var s = SYMBOLS[CURRENCY] || CURRENCY + ' ';
+    money: function (i) {
+      var q = assetsList()[i], v = prices[i];
+      if (!q) return '';
+      var s = q.unit === 'BRL' ? 'R$ ' : q.unit === 'EUR' ? '€' : '$';
       if (isNaN(v)) return s + '—';
-      return s + (v >= 1000 ? fmt(v, 0) : fmt(v, 2));
+      var dp = v >= 1000 ? 0 : v >= 1 ? 2 : v >= 0.01 ? 4 : 6;   // casas decimais conforme o tamanho do preço
+      return s + fmt(v, dp);
     },
     change: function (v) { return isNaN(v) ? '' : (v >= 0 ? '+' : '−') + fmt(Math.abs(v), 1) + '%'; },
     degrees: function (v) {
@@ -559,6 +727,16 @@ var Data = (function () {
       var d = new Date(at), h = d.getHours(), m = d.getMinutes();
       if (I18N.lang === 'en') return (h % 12 || 12) + ':' + (m < 10 ? '0' : '') + m + (h < 12 ? ' AM' : ' PM');
       return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+    },
+    /** Short weekday name for a "YYYY-MM-DD" date, in the current language. */
+    weekday: function (dateStr) {
+      var p = (dateStr || '').split('-');
+      if (p.length < 3) return '';
+      var idx = new Date(+p[0], p[1] - 1, +p[2]).getDay();
+      var pt = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+      var en = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      var es = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+      return I18N.lang === 'en' ? en[idx] : I18N.lang === 'es' ? es[idx] : pt[idx];
     },
     /** "12 min ago" when the data is old (no internet), or empty. */
     staleness: function (at, every) {
@@ -590,6 +768,10 @@ var Data = (function () {
       if (code >= 95) return 'thunderstorm';
       return 'rainy';
     },
-    coinName: function (i) { return i === 3 ? tr('Dólar', 'Dollar', 'Dólar') : ['Bitcoin', 'Ethereum', 'Solana'][i]; }
+    coinName: function (i) { var q = assetsList()[i]; return q ? pairLabel(q) : ''; },
+    quoteSym: function (i) { var q = assetsList()[i]; return q ? q.sym : ''; },
+    assetList: function () { return assetsList().slice(); },
+    addAsset: addAsset,
+    removeAsset: removeAsset
   };
 })();

@@ -11,18 +11,51 @@
   font-weight: 100 900;
 }
 
+/* MARK: - Themes. Six palettes as CSS variables (webOS 4+/Chromium 53 supports them). Three light, three dark.
+ * A dark theme also gets the body.night class (set in home.js) for the glass and shadows. :root is the light default. */
+:root {
+  --bg: #ECE6DB; --sky-top: #F1ECE2; --sky-bottom: #E4DCCB; --veil: 236, 230, 219; --veil-a: 0.76; --lift: #FBF8F2;
+  --ink: #2B2721; --ink2: #6E675B; --ink3: #9A9183; --accent: #FBF8F2; --accent-ink: #2B2721;
+}
+body[data-theme="areia"] {
+  --bg: #ECE6DB; --sky-top: #F1ECE2; --sky-bottom: #E4DCCB; --veil: 236, 230, 219; --veil-a: 0.76; --lift: #FBF8F2;
+  --ink: #2B2721; --ink2: #6E675B; --ink3: #9A9183; --accent: #FBF8F2; --accent-ink: #2B2721;
+}
+body[data-theme="nevoa"] {
+  --bg: #E3E7EE; --sky-top: #EDF0F5; --sky-bottom: #D8DEE8; --veil: 227, 231, 238; --veil-a: 0.76; --lift: #FAFBFD;
+  --ink: #1E2430; --ink2: #5A6270; --ink3: #8A92A0; --accent: #FAFBFD; --accent-ink: #1E2430;
+}
+body[data-theme="salvia"] {
+  --bg: #E2E8E0; --sky-top: #EDF1EA; --sky-bottom: #D6DFD3; --veil: 226, 232, 224; --veil-a: 0.76; --lift: #F7FAF4;
+  --ink: #222820; --ink2: #5C6557; --ink3: #8B9385; --accent: #F7FAF4; --accent-ink: #222820;
+}
+body[data-theme="meianoite"] {
+  --bg: #0E1320; --sky-top: #141B2B; --sky-bottom: #090D16; --veil: 9, 13, 22; --veil-a: 0.80; --lift: #000000;
+  --ink: #E9ECF3; --ink2: #AEB6C6; --ink3: #7A8196; --accent: #FFFFFF; --accent-ink: #141B2B;
+}
+body[data-theme="oled"] {
+  --bg: #000000; --sky-top: #0A0A0B; --sky-bottom: #000000; --veil: 0, 0, 0; --veil-a: 0.82; --lift: #000000;
+  --ink: #F5F5F7; --ink2: #AEAEB4; --ink3: #78787E; --accent: #FFFFFF; --accent-ink: #0A0A0B;
+}
+body[data-theme="carvao"] {
+  --bg: #191511; --sky-top: #211C16; --sky-bottom: #120F0B; --veil: 18, 15, 11; --veil-a: 0.80; --lift: #000000;
+  --ink: #EDE6DB; --ink2: #B6AC9C; --ink3: #857D6E; --accent: #F3E9D8; --accent-ink: #211C16;
+}
+
 html, body {
   margin: 0;
   padding: 0;
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #F5F5F7;
+  background: #ECE6DB;
+  background: var(--bg);
 }
 
 body {
   font-family: 'Inter', 'LG Smart UI', 'Helvetica Neue', Arial, sans-serif;
-  color: #1D1D1F;
+  color: #2B2721;
+  color: var(--ink);
   -webkit-font-smoothing: antialiased;
   cursor: default;
 }
@@ -53,18 +86,14 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 
 /* MARK: - Background: the first pick's photo, very blurred and almost white (almost black at night). */
 
-#sky { background: #EBEBEF; }
+#sky { background: var(--sky-bottom); }
 #sky .grad { position: absolute; left: 0; top: 0; width: 100%; height: 100%; -webkit-transition: opacity 2s; transition: opacity 2s; }
-#sky .day { background: -webkit-linear-gradient(top, #F5F5F7, #E2E2E7); background: linear-gradient(#F5F5F7, #E2E2E7); }
-#sky .night { background: -webkit-linear-gradient(top, #1C1C1E, #0B0B0D); background: linear-gradient(#1C1C1E, #0B0B0D); opacity: 0; }
+#sky .day { background: -webkit-linear-gradient(top, var(--sky-top), var(--sky-bottom)); background: linear-gradient(var(--sky-top), var(--sky-bottom)); }
+#sky .night { display: none; }
 #sky canvas { position: absolute; left: -4%; top: -4%; width: 108%; height: 108%; opacity: 0; -webkit-transition: opacity 0.8s; transition: opacity 0.8s; }
 #sky canvas.on { opacity: 1; }
-#sky .veil { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: rgba(245, 245, 247, 0.74); -webkit-transition: background-color 2s; transition: background-color 2s; }
-#sky .lift { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: #FFF; opacity: 0; -webkit-transition: opacity 0.45s, background-color 2s; transition: opacity 0.45s, background-color 2s; }
-.night #sky .day { opacity: 0; }
-.night #sky .night { opacity: 1; }
-.night #sky .veil { background: rgba(11, 11, 13, 0.78); }
-.night #sky .lift { background: #000; }
+#sky .veil { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: rgba(var(--veil), var(--veil-a)); -webkit-transition: background-color 2s; transition: background-color 2s; }
+#sky .lift { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: var(--lift); opacity: 0; -webkit-transition: opacity 0.45s, background-color 2s; transition: opacity 0.45s, background-color 2s; }
 .drawer-open #sky .lift { opacity: 0.32; }
 .night.drawer-open #sky .lift { opacity: 0.42; }
 
@@ -83,27 +112,32 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .drawer-open #home { -webkit-transform: translateY(-560px); transform: translateY(-560px); }
 #top { -webkit-transition: opacity 0.3s; transition: opacity 0.3s; }
 .drawer-open #top { opacity: 0; }
-#drawer { -webkit-transform: translateY(560px); transform: translateY(560px); opacity: 0; }
-.drawer-open #drawer { -webkit-transform: none; transform: none; opacity: 1; }
+#drawer { -webkit-transform: translateY(560px); transform: translateY(560px); opacity: 0; pointer-events: none; }
+.drawer-open #drawer { -webkit-transform: none; transform: none; opacity: 1; pointer-events: auto; }
 
 /* MARK: - Title and tabs */
 
+/* Bloco central do topo: linha 1 = temperatura + horário; linha 2 = data (tudo centralizado). */
 #title {
   position: absolute;
-  left: 76px;
-  top: 52px;
+  left: 50%;
+  top: 58px;
+  -webkit-transform: translateX(-50%);
+  transform: translateX(-50%);
+  text-align: center;
   margin: 0;
-  font-size: 76px;
-  font-weight: 600;
   letter-spacing: 0.004em;
   line-height: 1;
   white-space: nowrap;
-  color: #1D1D1F;
-  -webkit-transition: color 2s;
-  transition: color 2s;
+  color: var(--ink);
+  font-feature-settings: 'tnum';
 }
+#title .l1 { font-size: 52px; font-weight: 600; }
+#title .l1 .sym { width: 42px; height: 42px; vertical-align: -8px; margin-right: 8px; }
+#title .l1 .tt { margin-right: 22px; }
+#title .tsub { display: block; font-size: 25px; font-weight: 500; letter-spacing: 0; color: var(--ink2); margin-top: 10px; text-transform: lowercase; }
 
-#tabs { position: absolute; left: 54px; top: 158px; height: 68px; white-space: nowrap; }
+#tabs { position: absolute; left: 54px; top: 77px; height: 68px; white-space: nowrap; }
 .tab {
   position: relative;
   display: inline-block;
@@ -111,24 +145,22 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   padding: 0 26px;
   margin-right: 4px;
   border-radius: 34px;
-  font-size: 30px;
+  font-size: 36px;
   font-weight: 500;
   line-height: 68px;
-  color: #6E6E73;
+  color: var(--ink2);
   -webkit-transition: -webkit-transform 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.2), background-color 0.25s, box-shadow 0.3s, color 0.25s;
   transition: transform 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.2), background-color 0.25s, box-shadow 0.3s, color 0.25s;
 }
-.tab.on { font-weight: 600; color: #1D1D1F; }
+.tab.on { font-weight: 600; color: var(--ink); }
 .tab.focus {
-  background: #FFF;
-  color: #1D1D1F;
+  background: var(--accent);
+  color: var(--accent-ink);
   -webkit-transform: scale(1.05);
   transform: scale(1.05);
   box-shadow: 0 8px 26px rgba(0, 0, 0, 0.22);
 }
-.night #title, .night .tab.on { color: #F5F5F7; }
-.night .tab { color: rgba(245, 245, 247, 0.62); }
-.night .tab.focus { color: #1D1D1F; box-shadow: 0 8px 26px rgba(0, 0, 0, 0.4); }
+.night .tab.focus { box-shadow: 0 8px 26px rgba(0, 0, 0, 0.4); }
 
 /* Crypto quotes at the right end of the tab row: a quiet detail. */
 #quotes {
@@ -138,13 +170,14 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   height: 28px;
   font-size: 21px;
   line-height: 28px;
-  color: #8E8E93;
+  color: var(--ink3);
   white-space: nowrap;
   -webkit-transition: opacity 0.25s;
   transition: opacity 0.25s;
   font-feature-settings: 'tnum';
 }
 #quotes .q { display: inline-block; margin-left: 24px; }
+#quotes .q .tick { font-weight: 700; margin-right: 6px; }
 #quotes svg { width: 15px; height: 15px; vertical-align: -1px; margin-right: 6px; fill: rgba(142, 142, 147, 0.7); }
 #quotes.hide { opacity: 0; }
 .night #quotes { color: rgba(245, 245, 247, 0.62); }
@@ -153,22 +186,22 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 /* Live TV, HDMI Inputs and Settings: glass circles; the focused one turns white, with its name below. */
 .round {
   position: absolute;
-  top: 69px;
-  width: 68px;
-  height: 68px;
-  border-radius: 34px;
+  top: 67px;
+  width: 78px;
+  height: 78px;
+  border-radius: 39px;
   background: -webkit-linear-gradient(top, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.5));
   background: linear-gradient(rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.5));
   box-shadow: 0 6px 26px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 0 0 1px rgba(255, 255, 255, 0.5);
-  color: #1D1D1F;
+  color: var(--ink);
   -webkit-transition: -webkit-transform 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.2), box-shadow 0.3s, background-color 0.25s;
   transition: transform 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.2), box-shadow 0.3s, background-color 0.25s;
 }
-.round .sym { position: absolute; left: 20px; top: 20px; width: 28px; height: 28px; }
-.round.focus { background: #FFF; -webkit-transform: scale(1.1); transform: scale(1.1); box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24); }
+.round .sym { position: absolute; left: 22px; top: 22px; width: 34px; height: 34px; }
+.round.focus { background: var(--accent); color: var(--accent-ink); -webkit-transform: scale(1.1); transform: scale(1.1); box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24); }
 .round .tip {
   position: absolute;
-  top: 88px;
+  top: 100px;
   left: 50%;
   width: 300px;
   margin-left: -150px;
@@ -176,6 +209,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   font-size: 23px;
   font-weight: 600;
   white-space: nowrap;
+  color: var(--ink);   /* cor própria: segue o tema (claro no escuro, escuro no claro) e não herda o accent-ink do foco */
   opacity: 0;
   -webkit-transition: opacity 0.2s;
   transition: opacity 0.2s;
@@ -188,8 +222,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   box-shadow: 0 6px 26px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.92);
 }
-.night .round.focus { background: #FFF; color: #1D1D1F; }
-.night .round.focus .tip { color: #F5F5F7; }
+.night .round.focus { background: var(--accent); color: var(--accent-ink); }
 
 /* MARK: - Picks: a wide card and two tall ones; focused, a card grows 5%, rises and its edge lights up. */
 
@@ -244,7 +277,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   font-size: 31px;
   font-weight: 600;
   letter-spacing: 0.012em;
-  color: #1D1D1F;
+  color: var(--ink);
   -webkit-transition: color 2s;
   transition: color 2s;
 }
@@ -258,11 +291,17 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   white-space: nowrap;
   font-size: 25px;
   font-weight: 500;
-  color: #6E6E73;
+  color: var(--ink2);
 }
 .night .card .img { background-color: #2C2C2E; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.32); }
 .night .card .name { color: #F5F5F7; }
 .night .card .meta { color: rgba(245, 245, 247, 0.62); }
+
+/* Carrossel de cards 16:9 (filmes, séries e vídeos do YouTube): thumbnail, título em até 2 linhas e o subtítulo abaixo. */
+#cards { -webkit-transition: -webkit-transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1); transition: transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1); }
+.card.vid { height: 326px; }
+.card.vid .name { top: 344px; font-size: 27px; line-height: 1.2; white-space: normal; overflow: hidden; max-height: 66px; }
+.card.vid .meta { top: 414px; font-size: 23px; }
 
 /* Without a TMDB key (or picks yet): the date and the time instead of the cards. */
 #clock {
@@ -273,10 +312,10 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   font-weight: 200;
   letter-spacing: -0.01em;
   line-height: 1;
-  color: #1D1D1F;
+  color: var(--ink);
   display: none;
 }
-#clock .date { display: block; font-size: 40px; font-weight: 500; letter-spacing: 0; margin-top: 18px; color: #6E6E73; }
+#clock .date { display: block; font-size: 40px; font-weight: 500; letter-spacing: 0; margin-top: 18px; color: var(--ink2); }
 .no-picks #clock { display: block; }
 .night #clock { color: #F5F5F7; }
 .night #clock .date { color: rgba(245, 245, 247, 0.62); }
@@ -310,6 +349,8 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   transition: transform 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.2), box-shadow 0.3s;
 }
 .tile img { position: absolute; left: 50%; top: 50%; max-width: 76%; max-height: 62%; -webkit-transform: translate(-50%, -50%); transform: translate(-50%, -50%); }
+.tile .brand { position: absolute; left: 50%; top: 20px; width: 42px; height: 42px; max-width: 42px; max-height: 42px; -webkit-transform: translateX(-50%); transform: translateX(-50%); object-fit: contain; }
+.tile .word.named { top: auto; bottom: 12px; margin-top: 0; height: 30px; line-height: 30px; font-size: 24px; }
 .tile .word {
   position: absolute;
   left: 8%;
@@ -339,14 +380,14 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   -webkit-transition: opacity 0.25s;
   transition: opacity 0.25s;
 }
-.tile.focus { -webkit-transform: scale(1.2); transform: scale(1.2); box-shadow: 0 18px 40px rgba(0, 0, 0, 0.34); z-index: 2; }
+.tile.focus { box-shadow: 0 0 0 4px #fff, 0 0 0 9px rgba(0, 0, 0, 0.55); z-index: 2; }
 .tile.focus::after { opacity: 1; }
 .night .tile { box-shadow: 0 4px 22px rgba(0, 0, 0, 0.3); }
-.night .tile.focus { box-shadow: 0 18px 40px rgba(0, 0, 0, 0.6); }
+.night .tile.focus { box-shadow: 0 0 0 4px #fff, 0 0 0 9px rgba(0, 0, 0, 0.75); }
 
 /* MARK: - Drawer: inputs and shortcuts, weather, prices */
 
-.row-title { position: absolute; top: 494px; font-size: 25px; font-weight: 600; color: #6E6E73; white-space: nowrap; }
+.row-title { position: absolute; top: 494px; font-size: 25px; font-weight: 600; color: var(--ink2); white-space: nowrap; }
 .night .row-title { color: rgba(255, 255, 255, 0.7); }
 
 .glass {
@@ -366,22 +407,22 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   height: 126px;
   border-radius: 20px;
   text-align: center;
-  color: #1D1D1F;
+  color: var(--ink);
   -webkit-transition: -webkit-transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.2), box-shadow 0.28s, background-color 0.2s;
   transition: transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.2), box-shadow 0.28s, background-color 0.2s;
 }
 .key .sym { position: absolute; left: 50%; top: 33px; width: 34px; height: 34px; margin-left: -17px; }
 .key .label { position: absolute; left: 8px; right: 8px; top: 82px; font-size: 23px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.key.off { color: #8E8E93; }
-.key.focus { background: #F5F5F7; color: #1C1C1E; -webkit-transform: scale(1.07); transform: scale(1.07); box-shadow: 0 16px 34px rgba(0, 0, 0, 0.42); z-index: 2; }
+.key.off { color: var(--ink3); }
+.key.focus { background: var(--accent); color: var(--accent-ink); -webkit-transform: scale(1.07); transform: scale(1.07); box-shadow: 0 16px 34px rgba(0, 0, 0, 0.42); z-index: 2; }
 .night .key { color: rgba(255, 255, 255, 0.95); }
 .night .key.off { color: rgba(255, 255, 255, 0.42); }
-.night .key.focus { color: #1C1C1E; }
+.night .key.focus { color: var(--accent-ink); }
 
-.panel { position: absolute; top: 708px; height: 300px; border-radius: 30px; overflow: hidden; color: #1D1D1F; }
+.panel { position: absolute; top: 708px; height: 300px; border-radius: 30px; overflow: hidden; color: var(--ink); }
 .night .panel { color: #F5F5F7; }
-.panel .head { position: absolute; left: 34px; top: 30px; font-size: 25px; font-weight: 600; color: #6E6E73; white-space: nowrap; }
-.panel .side { position: absolute; right: 34px; top: 33px; font-size: 21px; font-weight: 500; color: #8E8E93; white-space: nowrap; }
+.panel .head { position: absolute; left: 34px; top: 30px; font-size: 25px; font-weight: 600; color: var(--ink2); white-space: nowrap; }
+.panel .side { position: absolute; right: 34px; top: 33px; font-size: 21px; font-weight: 500; color: var(--ink3); white-space: nowrap; }
 .night .panel .head { color: rgba(255, 255, 255, 0.7); }
 .night .panel .side { color: rgba(255, 255, 255, 0.6); }
 
@@ -389,24 +430,25 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 #weather .now .sym { width: 56px; height: 56px; vertical-align: 12px; margin-right: 18px; }
 #weather .now .temp { font-size: 100px; font-weight: 300; line-height: 100px; font-feature-settings: 'tnum'; }
 #weather .cond { position: absolute; left: 34px; top: 192px; font-size: 29px; font-weight: 500; white-space: nowrap; }
-#weather .range { position: absolute; left: 34px; top: 236px; font-size: 23px; font-weight: 500; color: #6E6E73; white-space: nowrap; font-feature-settings: 'tnum'; }
+#weather .range { position: absolute; left: 34px; top: 236px; font-size: 23px; font-weight: 500; color: var(--ink2); white-space: nowrap; font-feature-settings: 'tnum'; }
 #weather .split { position: absolute; left: 391px; top: 34px; bottom: 34px; width: 2px; background: rgba(0, 0, 0, 0.1); }
-#weather .hours { position: absolute; left: 422px; right: 30px; top: 74px; height: 140px; }
+#weather .hours { position: absolute; left: 422px; right: 30px; top: 66px; height: 214px; }
 #weather .hour { position: absolute; top: 0; text-align: center; font-feature-settings: 'tnum'; }
-#weather .hour .t { font-size: 22px; font-weight: 500; color: #6E6E73; }
-#weather .hour .sym { display: block; width: 30px; height: 30px; margin: 22px auto 18px; }
+#weather .hour .t { font-size: 22px; font-weight: 500; color: var(--ink2); }
+#weather .hour .sym { display: block; width: 30px; height: 30px; margin: 12px auto 10px; }
 #weather .hour .d { font-size: 26px; font-weight: 500; }
-#weather .sun { position: absolute; left: 422px; top: 236px; font-size: 23px; font-weight: 500; color: #6E6E73; white-space: nowrap; }
-#weather .sun .sym { width: 22px; height: 22px; vertical-align: -3px; margin-right: 10px; }
-#weather .sun span { margin-right: 36px; }
+#weather .hour .lo { color: var(--ink3); font-weight: 500; }
+#weather .hour .sun { font-size: 20px; font-weight: 500; color: var(--ink2); white-space: nowrap; margin-top: 8px; }
+#weather .hour .sun .sym { display: inline-block; width: 18px; height: 18px; vertical-align: -3px; margin: 0 8px 0 0; }
 .night #weather .range, .night #weather .hour .t, .night #weather .sun { color: rgba(255, 255, 255, 0.68); }
 .night #weather .split { background: rgba(255, 255, 255, 0.14); }
 
-#prices .coin { position: absolute; left: 34px; right: 34px; height: 40px; font-size: 29px; font-weight: 500; white-space: nowrap; }
-#prices .coin svg { position: absolute; left: 2px; top: 6px; width: 26px; height: 26px; fill: #6E6E73; }
-#prices .coin .n { position: absolute; left: 50px; top: 0; }
-#prices .coin .p { position: absolute; right: 128px; top: 1px; font-size: 26px; font-feature-settings: 'tnum'; }
-#prices .coin .c { position: absolute; right: 0; top: 2px; width: 108px; height: 34px; line-height: 34px; border-radius: 17px; text-align: center; font-size: 21px; font-weight: 600; font-feature-settings: 'tnum'; }
+#prices .coin { position: absolute; left: 34px; right: 34px; height: 34px; font-size: 25px; font-weight: 500; white-space: nowrap; }
+#prices .coin svg { position: absolute; left: 2px; top: 5px; width: 24px; height: 24px; fill: var(--ink2); }
+#prices .coin .tick { position: absolute; left: 0; top: 1px; width: 52px; font-size: 19px; font-weight: 700; color: var(--ink2); letter-spacing: -0.02em; }
+#prices .coin .n { position: absolute; left: 62px; top: 0; }
+#prices .coin .p { position: absolute; right: 120px; top: 1px; font-size: 23px; font-feature-settings: 'tnum'; }
+#prices .coin .c { position: absolute; right: 0; top: 1px; width: 100px; height: 31px; line-height: 31px; border-radius: 16px; text-align: center; font-size: 19px; font-weight: 600; font-feature-settings: 'tnum'; }
 #prices .up { color: #248A3D; background: rgba(36, 138, 61, 0.2); }
 #prices .down { color: #D70015; background: rgba(215, 0, 21, 0.2); }
 .night #prices .coin svg { fill: rgba(255, 255, 255, 0.8); }
@@ -448,7 +490,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .cell.focus .face { -webkit-transform: scale(1.08); transform: scale(1.08); box-shadow: 0 16px 34px rgba(0, 0, 0, 0.55), inset 0 0 0 2px rgba(255, 255, 255, 0.4); }
 .cell.focus .label { color: #FFF; }
 
-#settings .box, #shelfedit .box {
+#settings .box, #shelfedit .box, #ytedit .box, #assetedit .box {
   position: absolute;
   left: 560px;
   top: 150px;
@@ -467,6 +509,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .box .row { position: relative; height: 70px; margin-bottom: 8px; border-radius: 20px; font-size: 30px; font-weight: 600; line-height: 70px; padding: 0 24px; white-space: nowrap; -webkit-transition: background-color 0.18s; transition: background-color 0.18s; }
 .box .row.focus { background: rgba(255, 255, 255, 0.13); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14); }
 .box .row .value { position: absolute; right: 24px; top: 0; color: rgba(255, 255, 255, 0.92); font-weight: 500; }
+.box .row .value.danger { color: #FF6B6B; font-weight: 700; }
 .box .row .value .chev { color: rgba(255, 255, 255, 0.35); margin: 0 10px; }
 .box .row.dim { color: rgba(255, 255, 255, 0.4); }
 .box .hint { padding: 14px 18px 0; font-size: 22px; font-weight: 500; color: rgba(255, 255, 255, 0.5); }
@@ -521,6 +564,58 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   z-index: 50;
 }
 #toast.on { opacity: 1; -webkit-transform: translate(-50%, 0); transform: translate(-50%, 0); }
+
+/* Campo para digitar o @ do canal do YouTube (abre o teclado da TV ao focar). */
+#ytinput {
+  display: none;
+  position: absolute;
+  left: 560px;
+  top: 150px;
+  width: 800px;
+  box-sizing: border-box;
+  padding: 26px 32px;
+  border-radius: 26px;
+  border: 0;
+  outline: none;
+  font-family: inherit;
+  font-size: 38px;
+  font-weight: 600;
+  color: #1C1C1E;
+  background: #FFF;
+  box-shadow: 0 40px 90px rgba(0, 0, 0, 0.6), inset 0 0 0 3px #3FD69B;
+  z-index: 60;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* As cotações antigas do topo direito saíram: agora ficam na barra acima do shelf. */
+#quotes { display: none; }
+
+/* Barra de ativos acima do shelf: rola em loop quando não cabe; centralizada quando cabe. */
+#ticker {
+  position: absolute;
+  left: 0;
+  top: 754px;
+  width: 1920px;
+  height: 40px;
+  line-height: 40px;
+  overflow: hidden;
+  text-align: center;
+  white-space: nowrap;
+  font-size: 23px;
+  font-feature-settings: 'tnum';
+  color: var(--ink2);
+}
+#ticker .track { display: inline-block; }
+#ticker.scroll { text-align: left; }
+#ticker .tk { display: inline-block; margin: 0 28px; }
+#ticker .tkpair { font-weight: 700; color: var(--ink); margin-right: 8px; }
+#ticker .tkprice { font-weight: 500; }
+#ticker .tkchg { margin-left: 8px; font-weight: 600; }
+#ticker .tkchg.up { color: #248A3D; }
+#ticker .tkchg.down { color: #D70015; }
+.night #ticker .tkchg.up { color: #30D158; }
+.night #ticker .tkchg.down { color: #FF453A; }
 
 /* The Magic Remote's pointer: no text selection, no outlines. */
 * { -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
